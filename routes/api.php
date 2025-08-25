@@ -9,7 +9,9 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\IdseCloudController;
-use App\Http\Controllers\GeminiController;
+use App\Http\Controllers\GeminiChatController;
+
+Route::post('gemini-chat', [GeminiChatController::class, 'handleChat']);
 
 // Agrupamos todas las rutas bajo un prefijo para mantener el orden.
 Route::prefix('idse')->group(function () {
@@ -23,5 +25,3 @@ Route::prefix('idse')->group(function () {
     Route::post('/check-health', [IdseCloudController::class, 'checkHealth']);
     Route::post('/trabajadores-activos', [IdseCloudController::class, 'trabajadoresActivos']);
 });
-
-Route::post('/gemini-chat', [GeminiController::class, 'chat']);

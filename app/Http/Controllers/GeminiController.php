@@ -2,46 +2,48 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\GeminiService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class GeminiController extends Controller
 {
     public function chat(Request $request)
     {
-        $prompt = $request->input('prompt');
-        $apiKey = env('GEMINI_API_KEY');
+        try {
+            $validated = $request->validate([
+                'prompt' => 'required|string|max:2000',
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json(['error' => $e->validator->errors()->first()], 422);
+        }
 
-        if (!$apiKey) {
-            return response()->json(['error' => 'Gemini API key is not configured.'], 500);
+        if (! $apiKey = config('gemini.api_key')) {
+            Log::error('Gemini API key is not configured. Please check your .env file for GEMINI_API_KEY and run "php artisan config:clear".');
+            return response()->json(['error' => 'The AI assistant is currently unavailable due to a server configuration issue.'], 503);
         }
 
         try {
-            $response = Http::withHeaders([
-                'Content-Type' => 'application/json',
-            ])->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={$apiKey}", [
-                'contents' => [
-                    [
-                        'parts' => [
-                            ['text' => $prompt]
-                        ]
-                    ]
-                ]
+            $geminiService = new GeminiService($apiKey, config('gemini.model'));
+            $text = $geminiService->generateContent($validated['prompt']);
+            
+            return response()->json(['response' => $text]);
+
+        } catch (RequestException $e) {
+            Log::error('Gemini API Request Error: ' . $e->getMessage(), [
+                'status' => $e->response?->status(),
+                'response' => $e->response?->body(),
             ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? 'No response text found.';
-                return response()->json(['response' => $text]);
-            }
-
-            Log::error('Gemini API Error: ' . $response->body());
-            return response()->json(['error' => 'Failed to get response from Gemini API.'], $response->status());
-
-        } catch (\Exception $e) {
-            Log::error('Gemini Chat Exception: ' . $e->getMessage());
-            return response()->json(['error' => 'An unexpected error occurred.'], 500);
+            return response()->json(['error' => 'Failed to get a response from the AI assistant.'], 502); // 502 Bad Gateway
+        } catch (\Throwable $e) {
+            Log::critical('Gemini Chat Exception: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json(['error' => 'An unexpected server error occurred.'], 500);
         }
     }
 }
